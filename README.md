@@ -2,7 +2,7 @@
 
 > **Aviso**
 >
-> Este projeto foi desenvolvido **exclusivamente para fins educacionais**, como parte de uma disciplina de Segurança da Informação. Seu objetivo é demonstrar o funcionamento de técnicas de captura de eventos do teclado e mouse, além da integração com APIs.
+> Este projeto foi desenvolvido **exclusivamente para fins educacionais**, como parte de uma disciplina de Segurança da Informação. Seu objetivo é demonstrar o funcionamento de técnicas de captura de eventos do teclado e mouse, integração com APIs assíncronas e concorrência no Python.
 >
 > **Não utilize este projeto em computadores de terceiros sem autorização explícita.** O uso indevido pode violar leis e políticas de segurança.
 
@@ -12,10 +12,10 @@
 
 Este projeto demonstra como um programa pode:
 
-- Capturar eventos do teclado utilizando a biblioteca `pynput`;
-- Detectar cliques do mouse;
+- Capturar eventos do teclado e cliques do mouse utilizando a biblioteca `pynput`;
+- Integrar a escuta de eventos em threads com um loop de eventos assíncrono (`asyncio`);
 - Armazenar temporariamente o texto digitado;
-- Enviar os dados utilizando a API do Telegram;
+- Enviar os dados de forma assíncrona e não-bloqueante para a API do Telegram utilizando `httpx`;
 - Utilizar variáveis de ambiente para armazenar informações sensíveis, como o Token do Bot.
 
 ---
@@ -23,10 +23,10 @@ Este projeto demonstra como um programa pode:
 # Tecnologias utilizadas
 
 - Python 3.10+
-- pynput
-- python-dotenv
-- pyTelegramBotAPI
-- requests
+- **pynput** (Captura de eventos de entrada)
+- **httpx** (Cliente HTTP assíncrono)
+- **asyncio** (Programação assíncrona nativa do Python)
+- **python-dotenv** (Gerenciamento de variáveis de ambiente)
 
 ---
 
@@ -43,26 +43,20 @@ Este projeto demonstra como um programa pode:
 
 # Como funciona
 
-O programa permanece executando em segundo plano aguardando eventos do teclado e do mouse.
+O programa roda um loop de eventos do `asyncio` em segundo plano e inicia os escutadores do `pynput` em threads separadas para não travar a execução.
 
-## Captura das teclas
+## Captura das teclas e mouse
 
-A biblioteca `pynput` registra cada tecla pressionada.
+A biblioteca `pynput` registra as teclas pressionadas e cliques do mouse em tempo real.
 
-Durante a digitação:
-
-- letras são adicionadas à palavra atual;
-- espaço adiciona um espaço em branco;
-- Backspace remove o último caractere;
-- Enter finaliza a captura da palavra/frase.
+- As letras e caracteres são acumulados na memória temporária.
+- Ao pressionar **Enter** ou **clicar com o mouse**, o texto acumulado é formatado e agendado para envio.
 
 ---
 
-## Captura do mouse
+## Integração Thread-Safe (pynput + asyncio)
 
-Sempre que ocorre um clique do mouse e existe texto pendente, esse conteúdo é enviado ao Telegram.
-
-Essa lógica simula o comportamento de registrar o que foi digitado antes da troca de foco para outra janela ou interação com o mouse.
+Como o `pynput` roda suas callbacks em threads separadas, o projeto utiliza a função `asyncio.run_coroutine_threadsafe()` para enviar as tarefas de envio HTTP para o loop de eventos principal do `asyncio`. Isso garante que a captura de teclas continue rápida e sem interrupções enquanto as requisições de rede ocorrem em segundo plano.
 
 ---
 
@@ -74,39 +68,25 @@ O projeto possui a constante:
 CHAR_MAX_TO_SEND = 50
 ```
 
-Essa constante define o número máximo de caracteres que uma mensagem pode possuir para ser enviada ao Telegram.
-
-Antes do envio, o programa verifica o tamanho do texto capturado. Caso a quantidade de caracteres ultrapasse esse limite, a mensagem é descartada e não é enviada.
+Essa constante define o número máximo de caracteres que uma mensagem pode possuir para ser enviada ao Telegram. Caso o texto capturado ultrapasse esse limite, ele é descartado antes do envio.
 
 ---
 
 ## Formatação da mensagem
 
-A biblioteca `pynput` captura os eventos do teclado, porém não preserva automaticamente a diferença entre letras maiúsculas e minúsculas. Quando o **Caps Lock** está ativado, em vez de registrar diretamente os caracteres em caixa alta, a biblioteca registra eventos indicando que a tecla `caps_lock` foi pressionada.
-
-Para tornar a mensagem enviada mais legível, foi implementada uma etapa de formatação utilizando uma expressão regular (Regex).
+Para tratar marcas de controle capturadas (como a tecla `caps_lock`), o texto passa por uma etapa de formatação via expressão regular (Regex) antes de ser transmitido.
 
 ```python
 regex = r"Key\.caps_lock(.*?)Key\.caps_lock"
 ```
 
-Em seguida, o trecho encontrado é substituído pela sua versão em caixa alta utilizando o método `.upper()`, fazendo com que a mensagem final fique mais próxima do que o usuário realmente digitou.
-
 ---
 
-## Envio para o Telegram
+## Envio Assíncrono para o Telegram
 
-O envio ocorre através da API HTTP oficial do Telegram.
+O envio é feito utilizando o cliente assíncrono do `httpx`. As mensagens são transmitidas de forma não-bloqueante para o endpoint oficial do Telegram:
 
-Cada mensagem enviada contém:
-
-- nome da máquina;
-- usuário do sistema;
-- texto capturado.
-
-Esses dados são enviados utilizando uma requisição HTTP para:
-
-```
+```text
 https://api.telegram.org/bot<TOKEN>/sendMessage
 ```
 
@@ -123,49 +103,38 @@ BOT_TOKEN=SEU_TOKEN
 CHAT_ID=SEU_CHAT_ID
 ```
 
-O projeto utiliza a biblioteca `python-dotenv` para carregar essas informações.
-
 ---
 
 # Como executar o projeto
 
-## 1. Clone o repositório
+## 1. Clone o repositório e acesse a pasta
 
 ```bash
 git clone <URL_DO_REPOSITORIO>
-```
-
-Entre na pasta:
-
-```bash
 cd nome-do-projeto
 ```
 
 ---
 
-## 2. Crie um ambiente virtual
+## 2. Crie e ative o ambiente virtual
 
 ### Windows
 
 ```powershell
 python -m venv .venv
-
 .venv\Scripts\activate
 ```
 
-### Linux
+### Linux / macOS
 
 ```bash
 python3 -m venv .venv
-
 source .venv/bin/activate
 ```
 
 ---
 
 ## 3. Instale as dependências
-
-Como o projeto possui um arquivo `requirements.txt`, basta executar:
 
 ```bash
 pip install -r requirements.txt
@@ -175,24 +144,22 @@ pip install -r requirements.txt
 
 ## 4. Configure o arquivo `.env`
 
-Crie um arquivo chamado:
-
-```
-.env
-```
-
-Adicione:
+Crie um arquivo chamado `.env` na raiz do projeto com o seguinte conteúdo:
 
 ```env
 BOT_TOKEN=SEU_TOKEN
 CHAT_ID=SEU_CHAT_ID
 ```
 
-## 5. Execute
+---
+
+## 5. Execute o programa
 
 ```bash
 python main.py
 ```
+
+---
 
 # Gerando um executável
 
@@ -247,73 +214,52 @@ Dentro dela estará o executável.
 
 ---
 
-# Importante sobre Windows
+# Importante sobre Windows e PyInstaller
 
-> **O executável do Windows deve ser gerado no próprio Windows.**
+> **O executável para Windows deve ser gerado em um ambiente Windows.**
 
-Um executável criado no Linux **não funciona** no Windows.
-
-Da mesma forma:
-
-- Linux gera executáveis Linux;
-- Windows gera executáveis Windows.
-
-Isso acontece porque o PyInstaller empacota bibliotecas específicas do sistema operacional em que ele está sendo executado.
-
-Caso o objetivo seja obter um `.exe`, todo o processo de geração deve ser realizado em um ambiente Windows (Windows físico ou máquina virtual).
+O PyInstaller empacota dependências C e DLLs específicas do sistema operacional onde o comando é executado.
 
 ---
 
 # Fluxo de funcionamento
 
 ```text
-Usuário digita
+Usuário digita ou clica
         │
         ▼
-pynput captura as teclas
+pynput captura os eventos (Thread secundária)
         │
         ▼
-Texto é armazenado temporariamente
+Texto é acumulado / formatado
         │
-        ├──────────────► Clique do mouse
-        │                     │
-        │                     ▼
-        └──────────────► Pressiona Enter
-                              │
-                              ▼
-                     Texto é formatado
-                              │
-                              ▼
-                 Envio pela API do Telegram
+        ▼
+asyncio.run_coroutine_threadsafe() (Ponte entre Threads)
+        │
+        ▼
+Event Loop do asyncio (Thread principal)
+        │
+        ▼
+Envio assíncrono via httpx.AsyncClient (Telegram API)
 ```
 
 ---
 
-# Dependências
-
-As principais bibliotecas utilizadas são:
-
-- `pynput`
-- `python-dotenv`
-- `requests`
-- `pyTelegramBotAPI`
-
-Todas podem ser instaladas automaticamente através do arquivo:
+# Dependências (`requirements.txt`)
 
 ```text
-requirements.txt
+pynput
+httpx
+python-dotenv
 ```
 
 ---
 
 # Observações
 
-Este projeto foi desenvolvido apenas para demonstrar conceitos de:
+Este projeto foi desenvolvido estritamente para demonstrar conceitos de:
 
-- captura de eventos do teclado;
-- captura de eventos do mouse;
-- integração com APIs;
-- utilização de variáveis de ambiente;
-- empacotamento de aplicações Python.
-
-O projeto não deve ser utilizado para monitoramento não autorizado ou qualquer atividade que viole a privacidade de terceiros.
+- Programação assíncrona em Python com `asyncio` e `httpx`;
+- Comunicação thread-safe entre escutadores de eventos e o loop de eventos assíncrono;
+- Integração com APIs REST via HTTP/HTTPS;
+- Gerenciamento de variáveis de ambiente e empacotamento com PyInstaller.
