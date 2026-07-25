@@ -2,3 +2,5 @@
 /clear-service
 test.txt
 /venv
+/build
+*.spec
