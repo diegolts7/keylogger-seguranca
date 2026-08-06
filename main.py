@@ -103,11 +103,9 @@ def formatMessage(message):
 async def main():
     loop = asyncio.get_running_loop()
 
-    # Inicia os listeners passando o 'loop' como parâmetro via lambda
     k_listener = keyboard.Listener(on_press=lambda key: onPress(key, loop))
     m_listener = mouse.Listener(on_click=lambda x, y, button, pressed: onClick(x, y, button, pressed, loop))
 
-    # Inicia os escutadores sem usar .join() bloqueante
     k_listener.start()
     m_listener.start()
 
